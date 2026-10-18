@@ -541,7 +541,8 @@ $$;
 revoke all on function public.get_public_menu(text, text) from public;
 grant execute on function public.get_public_menu(text, text) to anon, authenticated;
 
--- Keep this migration safe to re-apply while the RPC return shape evolves.
+-- Allow this RPC definition to replace an earlier return shape in a local
+-- development database before the migration is committed to a fresh project.
 drop function if exists public.create_order(text, text, jsonb, text);
 create or replace function public.create_order(
   p_restaurant_slug text,
