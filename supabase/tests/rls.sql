@@ -36,6 +36,10 @@ begin
     end if;
   end loop;
 
+  if to_regclass('public.order_items_restaurant_idx') is null then
+    raise exception 'Missing tenant index on public.order_items';
+  end if;
+
   foreach required_column in array array[
     'name', 'slug', 'description', 'logo_url', 'address', 'phone', 'currency', 'is_active'
   ] loop

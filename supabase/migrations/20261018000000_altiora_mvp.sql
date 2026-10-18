@@ -147,6 +147,8 @@ create index orders_table_created_idx
   on public.orders (table_id, created_at desc);
 create index order_items_order_idx
   on public.order_items (order_id, created_at);
+create index order_items_restaurant_idx
+  on public.order_items (restaurant_id, order_id);
 
 create or replace function public.set_updated_at()
 returns trigger
@@ -417,6 +419,12 @@ to authenticated
 using (public.is_restaurant_member(restaurant_id));
 
 -- Remove Supabase/Postgres defaults before granting the minimum API surface.
+alter default privileges in schema public
+  revoke all on tables from public, anon, authenticated;
+alter default privileges in schema public
+  revoke all on sequences from public, anon, authenticated;
+alter default privileges in schema public
+  revoke execute on functions from public, anon, authenticated;
 revoke all on all tables in schema public from public, anon, authenticated;
 revoke all on all sequences in schema public from public, anon, authenticated;
 revoke all on all functions in schema public from public, anon, authenticated;
