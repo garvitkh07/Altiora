@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
+import { canTransitionOrderStatus, type DatabaseOrderStatus } from "@/lib/orders/status";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 export const runtime = "nodejs";
@@ -64,9 +65,30 @@ export async function PATCH(request: Request, { params }: RouteContext) {
       return errorResponse("Staff authentication is required", 401);
     }
 
+    const { data: currentOrder, error: currentOrderError } = await supabase
+      .from("orders")
+      .select("status")
+      .eq("id", params.orderId)
+      .maybeSingle();
+
+    if (currentOrderError) {
+      throw currentOrderError;
+    }
+
+    if (!currentOrder) {
+      return errorResponse("Order not found or not accessible", 404);
+    }
+
+    const currentStatus = currentOrder.status as DatabaseOrderStatus;
+    const nextStatus = statusMap[parsed.data.status] as DatabaseOrderStatus;
+
+    if (!canTransitionOrderStatus(currentStatus, nextStatus)) {
+      return errorResponse("That order status transition is not allowed", 409);
+    }
+
     const { data, error } = await supabase
       .from("orders")
-      .update({ status: statusMap[parsed.data.status] })
+      .update({ status: nextStatus })
       .eq("id", params.orderId)
       .select("id, order_number, status, total_amount")
       .maybeSingle();
@@ -92,7 +114,16 @@ export async function PATCH(request: Request, { params }: RouteContext) {
         total_amount: Number(data.total_amount),
       },
     });
-  } catch {
+  } catch (error) {
+    if (
+      error &&
+      typeof error === "object" &&
+      "code" in error &&
+      error.code === "P0001"
+    ) {
+      return errorResponse("That order status transition is not allowed", 409);
+    }
+
     return errorResponse("The order status could not be updated", 500);
   }
 }

@@ -219,6 +219,19 @@ begin
   end if;
 
   if not exists (
+    select 1
+    from pg_trigger as tr
+    join pg_class as c on c.oid = tr.tgrelid
+    join pg_namespace as n on n.oid = c.relnamespace
+    where n.nspname = 'public'
+      and c.relname = 'orders'
+      and tr.tgname = 'orders_status_transitions'
+      and not tr.tgisinternal
+  ) then
+    raise exception 'Missing order status transition trigger';
+  end if;
+
+  if not exists (
     select 1 from pg_proc
     where pronamespace = 'public'::regnamespace
       and proname = 'get_public_menu'

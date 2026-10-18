@@ -188,6 +188,28 @@ $$;
 
 revoke all on function public.prevent_order_immutable_updates() from public;
 
+create or replace function public.prevent_invalid_order_status_transitions()
+returns trigger
+language plpgsql
+set search_path = public, pg_temp
+as $$
+begin
+  if new.status = old.status then
+    return new;
+  end if;
+
+  if (old.status = 'NEW' and new.status in ('PREPARING', 'READY', 'CANCELLED'))
+    or (old.status = 'PREPARING' and new.status in ('READY', 'CANCELLED'))
+    or (old.status = 'READY' and new.status in ('SERVED', 'CANCELLED')) then
+    return new;
+  end if;
+
+  raise exception 'Invalid order status transition' using errcode = 'P0001';
+end;
+$$;
+
+revoke all on function public.prevent_invalid_order_status_transitions() from public;
+
 create trigger restaurants_set_updated_at
 before update on public.restaurants
 for each row execute function public.set_updated_at();
@@ -209,6 +231,9 @@ for each row execute function public.set_updated_at();
 create trigger orders_immutable_fields
 before update on public.orders
 for each row execute function public.prevent_order_immutable_updates();
+create trigger orders_status_transitions
+before update of status on public.orders
+for each row execute function public.prevent_invalid_order_status_transitions();
 create trigger order_items_set_updated_at
 before update on public.order_items
 for each row execute function public.set_updated_at();
@@ -617,6 +642,7 @@ begin
       or not (v_item ? 'quantity')
       or jsonb_typeof(v_item -> 'menu_item_id') <> 'string'
       or jsonb_typeof(v_item -> 'quantity') <> 'number'
+      or (v_item ->> 'quantity') !~ '^[0-9]+$'
       or (v_item ? 'special_instructions' and jsonb_typeof(v_item -> 'special_instructions') not in ('string', 'null'))
       or (
         select count(*)
@@ -634,7 +660,7 @@ begin
 
     begin
       v_quantity := (v_item ->> 'quantity')::integer;
-    exception when invalid_text_representation then
+    exception when invalid_text_representation or numeric_value_out_of_range then
       raise exception 'Quantity must be an integer between 1 and 99' using errcode = 'P0001';
     end;
 

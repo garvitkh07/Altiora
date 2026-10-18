@@ -7,6 +7,7 @@ import {
   normalizeCreateOrderInput,
   parseCreateOrderInput,
 } from "./validation";
+import { canTransitionOrderStatus } from "./status";
 
 const menuItemId = "00000000-0000-4000-8000-000000000003";
 
@@ -96,5 +97,20 @@ describe("order totals", () => {
 
   it("rejects invalid priced lines", () => {
     expect(() => calculateOrderTotal([{ unitPrice: -1, quantity: 1 }])).toThrow(/non-negative/);
+  });
+});
+
+describe("order status transitions", () => {
+  it("allows forward progress and cancellation", () => {
+    expect(canTransitionOrderStatus("NEW", "PREPARING")).toBe(true);
+    expect(canTransitionOrderStatus("PREPARING", "READY")).toBe(true);
+    expect(canTransitionOrderStatus("READY", "SERVED")).toBe(true);
+    expect(canTransitionOrderStatus("NEW", "CANCELLED")).toBe(true);
+  });
+
+  it("rejects status regressions after an order is served or cancelled", () => {
+    expect(canTransitionOrderStatus("PREPARING", "NEW")).toBe(false);
+    expect(canTransitionOrderStatus("SERVED", "READY")).toBe(false);
+    expect(canTransitionOrderStatus("CANCELLED", "PREPARING")).toBe(false);
   });
 });

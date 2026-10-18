@@ -88,7 +88,8 @@ http://localhost:3000/reception
 Authenticated staff can update an order through `PATCH
 /api/orders/:orderId/status` with `{ "status": "preparing" }` (or `new`,
 `ready`, `completed`, or `cancelled`). The API maps these display values to the
-database enum and permits only the status column to change.
+database enum, permits only the status column to change, and rejects status
+regressions after an order is served or cancelled.
 
 ## Frontend API contract
 
