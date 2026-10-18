@@ -551,7 +551,8 @@ returns table (
   order_id uuid,
   order_number bigint,
   status public.order_status,
-  total_amount numeric(12, 2)
+  total_amount numeric(12, 2),
+  created_at timestamptz
 )
 language plpgsql
 security definer
@@ -568,6 +569,7 @@ declare
   v_table_id uuid;
   v_order_id uuid;
   v_order_number bigint;
+  v_created_at timestamptz;
   v_total numeric(12, 2) := 0;
   v_seen_item_ids uuid[] := '{}'::uuid[];
   v_order_instructions text := nullif(btrim(p_special_instructions), '');
@@ -685,8 +687,8 @@ begin
     v_total,
     v_order_instructions
   )
-  returning id, order_number
-    into v_order_id, v_order_number;
+  returning id, order_number, created_at
+    into v_order_id, v_order_number, v_created_at;
 
   for v_item in select value from jsonb_array_elements(p_items)
   loop
@@ -722,7 +724,7 @@ begin
   end loop;
 
   return query
-  select v_order_id, v_order_number, 'NEW'::public.order_status, v_total;
+  select v_order_id, v_order_number, 'NEW'::public.order_status, v_total, v_created_at;
 end;
 $$;
 

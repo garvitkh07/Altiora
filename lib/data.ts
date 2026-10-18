@@ -103,6 +103,7 @@ export interface OrderConfirmation {
   estimatedMinutes?: number | null;
   status?: string | null;
   totalAmount?: number | null;
+  createdAt?: string | null;
 }
 
 interface NestedOrderResponse {
@@ -113,11 +114,14 @@ interface NestedOrderResponse {
     orderNumber?: string | number | null;
     total_amount?: number | null;
     totalAmount?: number | null;
+    created_at?: string | null;
+    createdAt?: string | null;
     estimatedMinutes?: number | null;
     status?: string | null;
   };
   order_id?: string;
   order_number?: string | number | null;
+  created_at?: string | null;
 }
 
 export interface OrderStatusUpdate {
@@ -230,6 +234,10 @@ export function submitOrder(input: SubmitOrderInput): Promise<OrderConfirmation>
           payload.order.totalAmount !== undefined
             ? payload.order.totalAmount
             : payload.order.total_amount,
+        createdAt:
+          payload.order.createdAt !== undefined
+            ? payload.order.createdAt
+            : payload.order.created_at,
       };
     }
 
@@ -245,6 +253,7 @@ export function submitOrder(input: SubmitOrderInput): Promise<OrderConfirmation>
           "total_amount" in payload && typeof payload.total_amount === "number"
             ? payload.total_amount
             : null,
+        createdAt: "created_at" in payload && typeof payload.created_at === "string" ? payload.created_at : null,
       };
     }
 

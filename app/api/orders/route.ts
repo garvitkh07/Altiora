@@ -15,6 +15,7 @@ type OrderRpcRow = {
   order_number: number | string;
   status: string;
   total_amount: number | string;
+  created_at: string;
 };
 
 const knownRpcMessages = new Set([
@@ -119,7 +120,7 @@ export async function POST(request: Request) {
 
     const row = (Array.isArray(data) ? data[0] : data) as OrderRpcRow | null;
 
-    if (!row?.order_id || !row.status) {
+    if (!row?.order_id || !row.status || !row.created_at) {
       return errorResponse("Order could not be created. Please try again.", 500);
     }
 
@@ -130,9 +131,11 @@ export async function POST(request: Request) {
       order_number: orderNumber,
       status: row.status,
       total_amount: totalAmount,
+      created_at: row.created_at,
       // These aliases keep the existing confirmation component compatible.
       orderNumber: String(orderNumber),
       totalAmount,
+      createdAt: row.created_at,
     };
 
     return NextResponse.json(
@@ -141,6 +144,7 @@ export async function POST(request: Request) {
         order_number: orderNumber,
         status: row.status,
         total_amount: totalAmount,
+        created_at: row.created_at,
         order,
         // Safe response compatibility for the existing browser data helper.
         orderId: row.order_id,

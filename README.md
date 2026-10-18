@@ -146,10 +146,10 @@ The browser submits:
 }
 ```
 
-The route returns `order_id`, `order_number`, `status`, and `total_amount`,
-alongside a compatibility `order` object. The existing browser helper accepts
-the documented snake_case payload; the API also safely accepts the prior
-camelCase QR-link payload.
+The route returns `order_id`, `order_number`, `status`, `total_amount`, and
+the database-generated `created_at` timestamp, alongside a compatibility
+`order` object. The existing browser helper accepts the documented snake_case
+payload; the API also safely accepts the prior camelCase QR-link payload.
 
 ### `GET /api/kitchen/dashboard`
 
