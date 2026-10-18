@@ -47,6 +47,25 @@ table records and use the `get_public_menu` RPC, which never returns
 database prices for an atomic order plus order-item insert. Order statuses are
 `NEW`, `PREPARING`, `READY`, `SERVED`, and `CANCELLED`.
 
+### Provision staff access
+
+Create the first staff user in **Supabase Dashboard → Authentication → Users**.
+Then add that user's UUID to the seeded restaurant from the SQL editor (use the
+actual UUID from the Auth dashboard; do not put it in source control):
+
+```sql
+insert into public.restaurant_members (restaurant_id, user_id, role)
+values (
+  '10000000-0000-4000-8000-000000000001',
+  '<auth-user-uuid>',
+  'OWNER'
+);
+```
+
+The staff dashboard API reads the signed-in Supabase session and RLS limits it
+to restaurants where that user is a member. Customers do not need an account;
+their QR order uses the narrowly scoped public RPCs instead.
+
 ## Run locally
 
 ```bash
@@ -65,6 +84,11 @@ The staff views are available at:
 http://localhost:3000/kitchen
 http://localhost:3000/reception
 ```
+
+Authenticated staff can update an order through `PATCH
+/api/orders/:orderId/status` with `{ "status": "preparing" }` (or `new`,
+`ready`, `completed`, or `cancelled`). The API maps these display values to the
+database enum and permits only the status column to change.
 
 ## Frontend API contract
 
@@ -147,6 +171,10 @@ available. Build the production bundle with:
 npm run build
 ```
 
+The individual checks are also available as `npm run lint` and `npm run
+type-check`. Database policy assertions run separately with `supabase test db`
+after the local Supabase stack or a linked project is available.
+
 ## Docker
 
 Build and run the standalone Next.js image:
@@ -160,4 +188,4 @@ The `Dockerfile` pins the Node image, installs from `package-lock.json`, builds 
 
 ## Deploy
 
-For a Node-compatible host, install with `npm ci`, build with `npm run build`, and start with `npm run start`. The same-origin API routes must be deployed behind the same origin as the frontend, or the backend must provide an equivalent reverse proxy. For container deployment, use the Docker commands above and supply only deployment-safe environment values from `.env.example`.
+For a Node-compatible host, install with `npm ci`, build with `npm run build`, and start with `npm run start`. The same-origin API routes must be deployed behind the same origin as the frontend, or the backend must provide an equivalent reverse proxy. For Vercel, set `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY` in the project settings. This MVP deliberately does not read a service-role key; if a future administrative integration adds one, keep it server-only and out of `NEXT_PUBLIC_*` variables. For container deployment, use the Docker commands above and supply only deployment-safe environment values from `.env.example`.
