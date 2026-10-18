@@ -53,12 +53,16 @@ export async function GET() {
     const restaurantId = membership.restaurant_id;
     const { data: restaurant, error: restaurantError } = await supabase
       .from("restaurants")
-      .select("name, currency")
+      .select("name, currency, is_active")
       .eq("id", restaurantId)
       .maybeSingle();
 
     if (restaurantError) {
       throw restaurantError;
+    }
+
+    if (!restaurant?.is_active) {
+      return errorResponse("You are not a member of an active restaurant", 403);
     }
 
     const startOfDay = new Date();
