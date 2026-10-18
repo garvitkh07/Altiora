@@ -37,7 +37,10 @@ supabase db push
 supabase test db
 ```
 
-The static RLS assertions live in `supabase/tests/rls.sql`.
+The database assertions live in `supabase/tests/rls.sql` and
+`supabase/tests/order_rpc.sql`; the latter exercises database-priced totals,
+tenant-bound item rejection, malformed quantities, atomic rollback, and status
+transitions inside a rollback-only transaction.
 
 The migration under `supabase/migrations/` creates `restaurants`,
 `restaurant_members`, `categories`, `menu_items`, `restaurant_tables`, `orders`,
