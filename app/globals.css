@@ -257,6 +257,54 @@ select:focus-visible {
     letter-spacing: 0.1em;
   }
 
+  .staff-login-input {
+    background: rgba(255, 255, 255, 0.58);
+    border: 1px solid rgba(46, 42, 36, 0.12);
+    border-radius: 1rem;
+    color: #2e2a24;
+    font-size: 0.9rem;
+    min-height: 3rem;
+    padding: 0.75rem 0.9rem;
+    transition: border-color 160ms ease, box-shadow 160ms ease, background-color 160ms ease;
+    width: 100%;
+  }
+
+  .staff-login-input::placeholder {
+    color: #9a9387;
+  }
+
+  .staff-login-input:focus {
+    background: rgba(255, 255, 255, 0.78);
+    border-color: rgba(78, 106, 89, 0.6);
+    box-shadow: 0 0 0 3px rgba(120, 145, 126, 0.2);
+    outline: none;
+  }
+
+  .staff-login-input:disabled {
+    cursor: not-allowed;
+    opacity: 0.58;
+  }
+
+  .staff-login-error,
+  .staff-sign-out-error {
+    border-radius: 1rem;
+    background: rgba(184, 110, 86, 0.12);
+    color: #9a4f3c;
+    font-size: 0.82rem;
+    line-height: 1.4;
+    padding: 0.7rem 0.85rem;
+  }
+
+  .staff-sign-out {
+    min-height: 2.4rem;
+    padding: 0.55rem 0.8rem;
+  }
+
+  .staff-sign-out-error {
+    max-width: 16rem;
+    text-align: right;
+  }
+
   .status-badge {
     border-radius: 999px;
     display: inline-flex;

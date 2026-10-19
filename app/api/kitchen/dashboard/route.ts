@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 
+import { getStaffAccess } from "@/lib/staff/auth";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 export const runtime = "nodejs";
@@ -21,49 +22,30 @@ function errorResponse(error: string, status: number) {
 
 export async function GET() {
   try {
+    const staffAccess = await getStaffAccess();
+
+    if (!staffAccess.ok) {
+      if (staffAccess.errorCode === "unauthenticated") {
+        return errorResponse("Staff authentication is required", 401);
+      }
+
+      if (
+        staffAccess.errorCode === "unassigned" ||
+        staffAccess.errorCode === "inactive"
+      ) {
+        return errorResponse("You are not a member of an active restaurant", 403);
+      }
+
+      if (staffAccess.errorCode === "configuration") {
+        return errorResponse("Supabase is not configured on the server", 503);
+      }
+
+      return errorResponse("Your staff session could not be verified", 500);
+    }
+
     const supabase = await createSupabaseServerClient();
-    const {
-      data: { user },
-      error: userError,
-    } = await supabase.auth.getUser();
-
-    if (userError) {
-      return errorResponse("Your staff session could not be verified", 401);
-    }
-
-    if (!user) {
-      return errorResponse("Staff authentication is required", 401);
-    }
-
-    const { data: memberships, error: membershipError } = await supabase
-      .from("restaurant_members")
-      .select("restaurant_id")
-      .limit(1);
-
-    if (membershipError) {
-      throw membershipError;
-    }
-
-    const membership = memberships?.[0] as { restaurant_id?: string } | undefined;
-
-    if (!membership?.restaurant_id) {
-      return errorResponse("You are not a member of an active restaurant", 403);
-    }
-
-    const restaurantId = membership.restaurant_id;
-    const { data: restaurant, error: restaurantError } = await supabase
-      .from("restaurants")
-      .select("name, currency, is_active")
-      .eq("id", restaurantId)
-      .maybeSingle();
-
-    if (restaurantError) {
-      throw restaurantError;
-    }
-
-    if (!restaurant?.is_active) {
-      return errorResponse("You are not a member of an active restaurant", 403);
-    }
+    const { restaurant: staffRestaurant } = staffAccess.access;
+    const restaurantId = staffRestaurant.id;
 
     const startOfDay = new Date();
     startOfDay.setUTCHours(0, 0, 0, 0);
@@ -141,8 +123,8 @@ export async function GET() {
     const revenue = visibleOrders.reduce((sum, order) => sum + Number(order.total_amount), 0);
 
     return NextResponse.json({
-      restaurantName: restaurant?.name ?? "Altiora operations",
-      currency: restaurant?.currency ?? "INR",
+      restaurantName: staffRestaurant.name,
+      currency: staffRestaurant.currency,
       updatedAt: new Date().toISOString(),
       stats: {
         newOrders: visibleOrders.filter((order) => order.dashboardStatus === "new").length,

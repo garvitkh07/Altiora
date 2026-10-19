@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { EmptyState, ErrorState, LoadingState } from "@/components/feedback";
 import { Icon } from "@/components/icon";
+import { StaffSignOut } from "@/components/staff-sign-out";
 import {
   DataRequestError,
   getKitchenDashboard,
@@ -124,10 +125,13 @@ function DashboardHeader({ mode, restaurantName }: { mode: DashboardMode; restau
             <p className="truncate text-xs uppercase tracking-[0.15em] text-muted">{mode === "kitchen" ? "Kitchen command" : "Reception desk"}</p>
           </div>
         </div>
-        <div className="staff-lock-badge">
-          <Icon name="lock" size={14} />
-          <span className="hidden sm:inline">Staff only</span>
-          <span className="sm:hidden">Staff</span>
+        <div className="flex shrink-0 items-center gap-2">
+          <div className="staff-lock-badge">
+            <Icon name="lock" size={14} />
+            <span className="hidden sm:inline">Staff only</span>
+            <span className="sm:hidden">Staff</span>
+          </div>
+          <StaffSignOut />
         </div>
       </div>
     </header>

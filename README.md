@@ -84,9 +84,17 @@ http://localhost:3000/r/<restaurant-slug>/table/<table-token>
 The staff views are available at:
 
 ```text
+http://localhost:3000/staff/login
 http://localhost:3000/kitchen
 http://localhost:3000/reception
 ```
+
+Staff sign in at `/staff/login` with their Supabase Auth email and password.
+The page stores the session through Supabase SSR cookies; it does not use
+custom token storage. Authentication alone is not sufficient: the signed-in
+user must also have an `OWNER`, `MANAGER`, or `STAFF` row in
+`restaurant_members` for an active restaurant. The dashboards provide a
+Sign out action that clears the Supabase session and returns to the login page.
 
 Authenticated staff can update an order through `PATCH
 /api/orders/:orderId/status` with `{ "status": "preparing" }` (or `new`,
