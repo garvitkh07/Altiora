@@ -1,6 +1,7 @@
 "use client";
 
 import { type FormEvent, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 
 import { Icon } from "@/components/icon";
@@ -116,6 +117,12 @@ export function StaffLoginForm({
         {isSubmitting ? "Signing in…" : "Sign in"}
         {!isSubmitting ? <Icon name="arrow-right" size={17} /> : null}
       </button>
+
+      <p className="text-center text-sm text-muted">
+        <Link className="staff-auth-link" href="/staff/forgot-password">
+          Forgot password?
+        </Link>
+      </p>
     </form>
   );
 }

@@ -96,6 +96,29 @@ user must also have an `OWNER`, `MANAGER`, or `STAFF` row in
 `restaurant_members` for an active restaurant. The dashboards provide a
 Sign out action that clears the Supabase session and returns to the login page.
 
+### Staff password recovery (local development)
+
+Use **Forgot password?** on `/staff/login`. The recovery request always uses
+this local callback URL:
+
+```text
+http://localhost:3000/staff/reset-password
+```
+
+For local Supabase Auth testing, configure these values in **Supabase Dashboard
+→ Authentication → URL Configuration**:
+
+- **Site URL:** `http://localhost:3000`
+- **Redirect URLs:** `http://localhost:3000/**`
+
+These settings are for local development only. Do not change production URL
+configuration without approval. Start the local app before opening a reset
+email link; otherwise the browser can show `ERR_CONNECTION_REFUSED`. Reset
+links are single-use and expire, so an `otp_expired` or already-used link
+should be replaced by requesting a new one. The application handles recovery
+tokens in the browser session and never places passwords or tokens in custom
+URLs, logs, or storage.
+
 Authenticated staff can update an order through `PATCH
 /api/orders/:orderId/status` with `{ "status": "preparing" }` (or `new`,
 `ready`, `completed`, or `cancelled`). The API maps these display values to the

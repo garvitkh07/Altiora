@@ -295,6 +295,35 @@ select:focus-visible {
     padding: 0.7rem 0.85rem;
   }
 
+  .staff-forgot-password-success {
+    border-radius: 1rem;
+    background: rgba(120, 145, 126, 0.16);
+    color: #4e6a59;
+    font-size: 0.82rem;
+    line-height: 1.4;
+    padding: 0.7rem 0.85rem;
+  }
+
+  .staff-auth-link {
+    color: #4e6a59;
+    font-weight: 700;
+    text-decoration: underline;
+    text-decoration-color: rgba(78, 106, 89, 0.35);
+    text-underline-offset: 0.18em;
+    transition: color 160ms ease, text-decoration-color 160ms ease;
+  }
+
+  .staff-auth-link:hover {
+    color: #3f5849;
+    text-decoration-color: currentColor;
+  }
+
+  .staff-auth-link:focus-visible {
+    border-radius: 0.25rem;
+    outline: 3px solid rgba(120, 145, 126, 0.45);
+    outline-offset: 3px;
+  }
+
   .staff-sign-out {
     min-height: 2.4rem;
     padding: 0.55rem 0.8rem;
