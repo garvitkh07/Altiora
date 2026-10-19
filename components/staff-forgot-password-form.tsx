@@ -30,6 +30,7 @@ export function StaffForgotPasswordForm() {
     const validationError = validateStaffEmail(normalizedEmail);
 
     setError(validationError);
+
     if (validationError) {
       setStatus("idle");
       return;
@@ -39,12 +40,27 @@ export function StaffForgotPasswordForm() {
 
     try {
       const supabase = createSupabaseBrowserClient();
-      const { error: resetError } = await supabase.auth.resetPasswordForEmail(
-        normalizedEmail,
-        { redirectTo: STAFF_PASSWORD_RESET_REDIRECT },
-      );
+
+      const { error: resetError } =
+        await supabase.auth.resetPasswordForEmail(normalizedEmail, {
+          redirectTo: STAFF_PASSWORD_RESET_REDIRECT,
+        });
 
       if (resetError) {
+        // Development-only diagnostics.
+        // Never log the email, password, or recovery token.
+        if (process.env.NODE_ENV !== "production") {
+          console.error(
+            "[staff-recovery] Reset email request failed",
+            {
+              name: resetError.name,
+              status: resetError.status,
+              code: resetError.code,
+              message: resetError.message,
+            },
+          );
+        }
+
         setError(STAFF_PASSWORD_RESET_ERROR_MESSAGE);
         setStatus("idle");
         return;
@@ -52,7 +68,20 @@ export function StaffForgotPasswordForm() {
 
       setError(null);
       setStatus("success");
-    } catch {
+    } catch (error) {
+      // Log unexpected errors only during local development.
+      if (process.env.NODE_ENV !== "production") {
+        console.error(
+          "[staff-recovery] Unexpected error",
+          error instanceof Error
+            ? {
+                name: error.name,
+                message: error.message,
+              }
+            : String(error),
+        );
+      }
+
       setError(STAFF_PASSWORD_RESET_ERROR_MESSAGE);
       setStatus("idle");
     }
@@ -93,9 +122,13 @@ export function StaffForgotPasswordForm() {
       ) : null}
 
       <div>
-        <label className="text-sm font-semibold text-ink" htmlFor="staff-forgot-email">
+        <label
+          className="text-sm font-semibold text-ink"
+          htmlFor="staff-forgot-email"
+        >
           Email address
         </label>
+
         <input
           autoComplete="email"
           className="staff-login-input mt-2"
@@ -105,9 +138,11 @@ export function StaffForgotPasswordForm() {
           name="email"
           onChange={(event) => {
             setEmail(event.target.value);
+
             if (error) {
               setError(null);
             }
+
             if (status === "success") {
               setStatus("idle");
             }
@@ -124,8 +159,11 @@ export function StaffForgotPasswordForm() {
         disabled={status === "submitting"}
         type="submit"
       >
-        {status === "submitting" ? "Sending…" : "Send reset link"}
-        {status !== "submitting" ? <Icon name="arrow-right" size={17} /> : null}
+        {status === "submitting" ? "Sending..." : "Send reset link"}
+
+        {status !== "submitting" ? (
+          <Icon name="arrow-right" size={17} />
+        ) : null}
       </button>
 
       <p className="text-center text-sm text-muted">

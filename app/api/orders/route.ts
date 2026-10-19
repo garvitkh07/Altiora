@@ -5,6 +5,7 @@ import {
   normalizeCreateOrderInput,
   parseCreateOrderInput,
 } from "@/lib/orders/validation";
+
 import { SupabaseConfigurationError } from "@/lib/supabase/env";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
@@ -32,7 +33,11 @@ const knownRpcMessages = new Set([
   "Special instructions cannot exceed 500 characters",
 ]);
 
-function errorResponse(error: string, status: number, details?: unknown) {
+function errorResponse(
+  error: string,
+  status: number,
+  details?: unknown,
+) {
   return NextResponse.json(
     {
       error,
@@ -44,12 +49,18 @@ function errorResponse(error: string, status: number, details?: unknown) {
 }
 
 function rpcErrorMessage(error: unknown) {
-  if (!error || typeof error !== "object" || !("message" in error)) {
+  if (
+    !error ||
+    typeof error !== "object" ||
+    !("message" in error)
+  ) {
     return "Order could not be created. Please try again.";
   }
 
   const message = (error as { message?: unknown }).message;
-  return typeof message === "string" && knownRpcMessages.has(message)
+
+  return typeof message === "string" &&
+    knownRpcMessages.has(message)
     ? message
     : "Order could not be created. Please try again.";
 }
@@ -57,7 +68,11 @@ function rpcErrorMessage(error: unknown) {
 function toSafeAmount(value: number | string) {
   const amount = typeof value === "number" ? value : Number(value);
 
-  if (!Number.isFinite(amount) || amount < 0 || Math.round(amount * 100) > Number.MAX_SAFE_INTEGER) {
+  if (
+    !Number.isFinite(amount) ||
+    amount < 0 ||
+    Math.round(amount * 100) > Number.MAX_SAFE_INTEGER
+  ) {
     throw new Error("RPC returned an invalid monetary value");
   }
 
@@ -65,7 +80,8 @@ function toSafeAmount(value: number | string) {
 }
 
 function toOrderNumber(value: number | string) {
-  const orderNumber = typeof value === "number" ? value : Number(value);
+  const orderNumber =
+    typeof value === "number" ? value : Number(value);
 
   if (!Number.isSafeInteger(orderNumber) || orderNumber < 1) {
     throw new Error("RPC returned an invalid order number");
@@ -97,6 +113,7 @@ export async function POST(request: Request) {
 
   try {
     const supabase = await createSupabaseServerClient();
+
     const { data, error } = await supabase.rpc("create_order", {
       p_restaurant_slug: input.restaurant_slug,
       p_table_token: input.table_token,
@@ -111,28 +128,48 @@ export async function POST(request: Request) {
     });
 
     if (error) {
+      // Temporary development-only logging.
+      // Keep the detailed database error out of the customer response.
+      if (process.env.NODE_ENV !== "production") {
+        console.error("[orders] create_order RPC failed", {
+          code: error.code,
+          message: error.message,
+          details: error.details,
+          hint: error.hint,
+        });
+      }
+
       const isClientError = error.code === "P0001";
+
       const message = isClientError
         ? rpcErrorMessage(error)
         : "Order could not be created. Please try again.";
+
       return errorResponse(message, isClientError ? 400 : 500);
     }
 
-    const row = (Array.isArray(data) ? data[0] : data) as OrderRpcRow | null;
+    const row = (
+      Array.isArray(data) ? data[0] : data
+    ) as OrderRpcRow | null;
 
     if (!row?.order_id || !row.status || !row.created_at) {
-      return errorResponse("Order could not be created. Please try again.", 500);
+      return errorResponse(
+        "Order could not be created. Please try again.",
+        500,
+      );
     }
 
     const orderNumber = toOrderNumber(row.order_number);
     const totalAmount = toSafeAmount(row.total_amount);
+
     const order = {
       id: row.order_id,
       order_number: orderNumber,
       status: row.status,
       total_amount: totalAmount,
       created_at: row.created_at,
-      // These aliases keep the existing confirmation component compatible.
+
+      // Compatibility aliases for the existing confirmation component.
       orderNumber: String(orderNumber),
       totalAmount,
       createdAt: row.created_at,
@@ -146,16 +183,36 @@ export async function POST(request: Request) {
         total_amount: totalAmount,
         created_at: row.created_at,
         order,
-        // Safe response compatibility for the existing browser data helper.
+
+        // Compatibility with the existing browser data helper.
         orderId: row.order_id,
       },
       { status: 201 },
     );
   } catch (error) {
     if (error instanceof SupabaseConfigurationError) {
-      return errorResponse("Supabase is not configured on the server", 500);
+      return errorResponse(
+        "Supabase is not configured on the server",
+        500,
+      );
     }
 
-    return errorResponse("Order could not be created. Please try again.", 500);
+    // Log unexpected errors only during local development.
+    if (process.env.NODE_ENV !== "production") {
+      console.error(
+        "[orders] Unexpected order creation error",
+        error instanceof Error
+          ? {
+              name: error.name,
+              message: error.message,
+            }
+          : String(error),
+      );
+    }
+
+    return errorResponse(
+      "Order could not be created. Please try again.",
+      500,
+    );
   }
 }

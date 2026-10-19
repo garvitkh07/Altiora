@@ -73,7 +73,7 @@ create table public.restaurant_tables (
   id uuid primary key default gen_random_uuid(),
   restaurant_id uuid not null references public.restaurants(id) on delete cascade,
   label text not null check (btrim(label) <> ''),
-  qr_token text not null unique default encode(gen_random_bytes(16), 'hex'),
+qr_token text not null unique default encode(extensions.gen_random_bytes(16), 'hex'),
   is_active boolean not null default true,
   created_at timestamptz not null default timezone('utc', now()),
   updated_at timestamptz not null default timezone('utc', now()),
