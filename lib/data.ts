@@ -150,6 +150,37 @@ export class DataRequestError extends Error {
   }
 }
 
+/**
+ * A transport failure, gateway/server failure, or HTTP 408/429 may occur after
+ * the database accepted the request. Keep the original key and payload for
+ * those cases. HTTP 409 is handled separately as an idempotency conflict.
+ */
+export function isUncertainOrderError(error: unknown) {
+  return (
+    !(error instanceof DataRequestError) ||
+    error.status >= 500 ||
+    error.status === 408 ||
+    error.status === 429
+  );
+}
+
+export function isOrderIdempotencyConflict(error: unknown) {
+  return error instanceof DataRequestError && error.status === 409;
+}
+
+export function isDefiniteOrderClientError(error: unknown) {
+  // Future client statuses that can represent an accepted-but-unconfirmed
+  // request must be excluded here and handled as uncertain instead.
+  return (
+    error instanceof DataRequestError &&
+    error.status >= 400 &&
+    error.status < 500 &&
+    error.status !== 408 &&
+    error.status !== 429 &&
+    error.status !== 409
+  );
+}
+
 type ApiEnvelope<T> = T | { data: T };
 
 function unwrap<T>(payload: ApiEnvelope<T>): T {
@@ -214,9 +245,15 @@ export function getKitchenDashboard(): Promise<KitchenDashboardData> {
   return requestJson<KitchenDashboardData>("/api/kitchen/dashboard");
 }
 
-export function submitOrder(input: SubmitOrderInput): Promise<OrderConfirmation> {
+export function submitOrder(
+  input: SubmitOrderInput,
+  idempotencyKey: string,
+): Promise<OrderConfirmation> {
   return requestJson<OrderConfirmation | NestedOrderResponse>("/api/orders", {
     method: "POST",
+    headers: {
+      "Idempotency-Key": idempotencyKey,
+    },
     body: JSON.stringify(input),
   }).then((payload) => {
     if (payload && typeof payload === "object" && "order" in payload && payload.order) {

@@ -16,11 +16,15 @@ interface OrderCartProps {
   currency: string;
   tableLabel: string;
   submitting?: boolean;
+  attemptFrozen?: boolean;
+  attemptConflict?: boolean;
+  recoveryBlocked?: boolean;
   submitError?: string | null;
   specialInstructions?: string;
   onQuantityChange: (id: string, quantity: number) => void;
   onSpecialInstructionsChange: (value: string) => void;
   onSubmit: () => void;
+  onAbandonAttempt?: () => void;
   headingId?: string;
 }
 
@@ -43,11 +47,15 @@ export function OrderCart({
   currency,
   tableLabel,
   submitting = false,
+  attemptFrozen = false,
+  attemptConflict = false,
+  recoveryBlocked = false,
   submitError,
   specialInstructions = "",
   onQuantityChange,
   onSpecialInstructionsChange,
   onSubmit,
+  onAbandonAttempt,
   headingId = "cart-title",
 }: OrderCartProps) {
   return (
@@ -87,6 +95,7 @@ export function OrderCart({
                   <button
                     aria-label={`Remove one ${item.name}`}
                     className="icon-button"
+                    disabled={submitting || attemptFrozen || recoveryBlocked}
                     onClick={() => onQuantityChange(item.id, item.quantity - 1)}
                     type="button"
                   >
@@ -98,6 +107,7 @@ export function OrderCart({
                   <button
                     aria-label={`Add one ${item.name}`}
                     className="icon-button"
+                    disabled={submitting || attemptFrozen || recoveryBlocked}
                     onClick={() => onQuantityChange(item.id, item.quantity + 1)}
                     type="button"
                   >
@@ -112,9 +122,19 @@ export function OrderCart({
 
       <div className="border-t border-ink/10 bg-white/30 px-5 py-5 sm:px-6">
         {submitError ? (
-          <p aria-live="assertive" className="mb-3 rounded-xl bg-clay/10 px-3 py-2 text-sm leading-5 text-clay">
-            {submitError}
-          </p>
+          <div className="mb-3 rounded-xl bg-clay/10 px-3 py-2 text-sm leading-5 text-clay">
+            <p aria-live="assertive">{submitError}</p>
+            {(attemptFrozen || recoveryBlocked) && onAbandonAttempt ? (
+              <button
+                className="mt-2 text-xs font-semibold underline underline-offset-2"
+                disabled={submitting}
+                onClick={onAbandonAttempt}
+                type="button"
+              >
+                Start over and edit order
+              </button>
+            ) : null}
+          </div>
         ) : null}
         <div className="flex items-center justify-between text-sm text-muted">
           <span>Subtotal</span>
@@ -130,7 +150,7 @@ export function OrderCart({
             <textarea
               aria-describedby={`${headingId}-instructions-count`}
               className="text-area-control"
-              disabled={submitting}
+              disabled={submitting || attemptFrozen || recoveryBlocked}
               id={`${headingId}-instructions`}
               maxLength={500}
               onChange={(event) => onSpecialInstructionsChange(event.target.value)}
@@ -145,7 +165,12 @@ export function OrderCart({
         ) : null}
         <button
           className="button-primary mt-4 w-full"
-          disabled={items.length === 0 || submitting}
+          disabled={
+            (items.length === 0 && !attemptFrozen) ||
+            submitting ||
+            attemptConflict ||
+            recoveryBlocked
+          }
           onClick={onSubmit}
           type="button"
         >
@@ -156,7 +181,13 @@ export function OrderCart({
             </>
           ) : (
             <>
-              Place order
+              {recoveryBlocked
+                ? "Start over to continue"
+                : attemptConflict
+                ? "Start over to retry"
+                : attemptFrozen
+                  ? "Retry saved order"
+                  : "Place order"}
               <Icon name="arrow-right" size={17} />
             </>
           )}

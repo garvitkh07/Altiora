@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import {
   formatValidationIssues,
   normalizeCreateOrderInput,
+  parseIdempotencyKey,
   parseCreateOrderInput,
 } from "@/lib/orders/validation";
 
@@ -17,7 +18,13 @@ type OrderRpcRow = {
   status: string;
   total_amount: number | string;
   created_at: string;
+  is_replay?: boolean;
+  replayed?: boolean;
 };
+
+const idempotencyKeyError = "A valid Idempotency-Key header is required";
+const idempotencyConflictError =
+  "This checkout attempt conflicts with another request. Please start a new order.";
 
 const knownRpcMessages = new Set([
   "A restaurant slug and table token are required",
@@ -90,7 +97,26 @@ function toOrderNumber(value: number | string) {
   return orderNumber;
 }
 
+function getReplayFlag(row: OrderRpcRow) {
+  if (typeof row.is_replay === "boolean") {
+    return row.is_replay;
+  }
+
+  if (typeof row.replayed === "boolean") {
+    return row.replayed;
+  }
+
+  return null;
+}
+
 export async function POST(request: Request) {
+  const idempotencyKey = request.headers.get("Idempotency-Key");
+  const parsedIdempotencyKey = parseIdempotencyKey(idempotencyKey);
+
+  if (!parsedIdempotencyKey.success) {
+    return errorResponse(idempotencyKeyError, 400);
+  }
+
   let body: unknown;
 
   try {
@@ -117,6 +143,7 @@ export async function POST(request: Request) {
     const { data, error } = await supabase.rpc("create_order", {
       p_restaurant_slug: input.restaurant_slug,
       p_table_token: input.table_token,
+      p_idempotency_key: parsedIdempotencyKey.data,
       p_items: input.items.map((item) => ({
         menu_item_id: item.menu_item_id,
         quantity: item.quantity,
@@ -128,15 +155,8 @@ export async function POST(request: Request) {
     });
 
     if (error) {
-      // Temporary development-only logging.
-      // Keep the detailed database error out of the customer response.
-      if (process.env.NODE_ENV !== "production") {
-        console.error("[orders] create_order RPC failed", {
-          code: error.code,
-          message: error.message,
-          details: error.details,
-          hint: error.hint,
-        });
+      if (error.code === "PZ001") {
+        return errorResponse(idempotencyConflictError, 409);
       }
 
       const isClientError = error.code === "P0001";
@@ -151,8 +171,9 @@ export async function POST(request: Request) {
     const row = (
       Array.isArray(data) ? data[0] : data
     ) as OrderRpcRow | null;
+    const isReplay = row ? getReplayFlag(row) : null;
 
-    if (!row?.order_id || !row.status || !row.created_at) {
+    if (!row?.order_id || !row.status || !row.created_at || isReplay === null) {
       return errorResponse(
         "Order could not be created. Please try again.",
         500,
@@ -182,31 +203,19 @@ export async function POST(request: Request) {
         status: row.status,
         total_amount: totalAmount,
         created_at: row.created_at,
+        replayed: isReplay,
         order,
 
         // Compatibility with the existing browser data helper.
         orderId: row.order_id,
       },
-      { status: 201 },
+      { status: isReplay ? 200 : 201 },
     );
   } catch (error) {
     if (error instanceof SupabaseConfigurationError) {
       return errorResponse(
         "Supabase is not configured on the server",
         500,
-      );
-    }
-
-    // Log unexpected errors only during local development.
-    if (process.env.NODE_ENV !== "production") {
-      console.error(
-        "[orders] Unexpected order creation error",
-        error instanceof Error
-          ? {
-              name: error.name,
-              message: error.message,
-            }
-          : String(error),
       );
     }
 

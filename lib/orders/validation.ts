@@ -1,6 +1,14 @@
 import { z } from "zod";
 
 const uuidSchema = z.string().uuid("Must be a valid UUID");
+const idempotencyKeySchema = z
+  .string()
+  .min(16, "Idempotency-Key is too short")
+  .max(255, "Idempotency-Key is too long")
+  .regex(
+    /^[A-Za-z0-9._~-]+$/,
+    "Idempotency-Key contains unsupported characters",
+  );
 const instructionsSchema = z
   .string()
   .trim()
@@ -110,6 +118,12 @@ export type CreateOrderInput = z.infer<typeof createOrderSchema>;
 export type LegacyCreateOrderInput = z.infer<typeof legacyCreateOrderSchema>;
 export type OrderItemInput = z.infer<typeof orderItemSchema>;
 export type ParsedCreateOrderInput = CreateOrderInput | LegacyCreateOrderInput;
+
+export { idempotencyKeySchema };
+
+export function parseIdempotencyKey(input: string | null | undefined) {
+  return idempotencyKeySchema.safeParse(input);
+}
 
 export function parseCreateOrderInput(input: unknown) {
   if (

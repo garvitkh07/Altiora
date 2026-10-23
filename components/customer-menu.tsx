@@ -1,17 +1,32 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { EmptyState, ErrorState, LoadingState } from "@/components/feedback";
 import { Icon } from "@/components/icon";
 import { OrderCart, type CartLine } from "@/components/order-cart";
 import {
   getRestaurantMenu,
+  isDefiniteOrderClientError,
+  isOrderIdempotencyConflict,
+  isUncertainOrderError,
   submitOrder,
+  type SubmitOrderInput,
   type MenuCategory,
   type MenuItem,
   type OrderConfirmation,
   type RestaurantMenu,
 } from "@/lib/data";
+import {
+  clearOrderAttempt,
+  createOrderAttempt,
+  isOrderAttemptForRoute,
+  markOrderAttemptConflict,
+  markOrderAttemptUncertain,
+  abandonOrderAttempt as abandonPersistedOrderAttempt,
+  restoreOrderAttemptState,
+  saveOrderAttempt,
+  type OrderAttempt,
+} from "@/lib/orders/idempotency";
 
 interface CustomerMenuProps {
   restaurantSlug: string;
@@ -61,11 +76,13 @@ function MenuItemCard({
   currency,
   quantity,
   onAdd,
+  attemptFrozen = false,
 }: {
   item: MenuItem;
   currency: string;
   quantity: number;
   onAdd: () => void;
+  attemptFrozen?: boolean;
 }) {
   const unavailable = item.isAvailable === false;
   const initial = item.name.trim().charAt(0).toUpperCase() || "A";
@@ -91,13 +108,27 @@ function MenuItemCard({
         </div>
         {item.description ? <p className="mt-3 line-clamp-3 text-sm leading-6 text-muted">{item.description}</p> : null}
         <button
-          aria-label={unavailable ? `${item.name} is sold out` : `Add ${item.name} to order`}
+          aria-label={
+            unavailable
+              ? `${item.name} is sold out`
+              : attemptFrozen
+                ? `${item.name} is unavailable while the saved checkout is pending`
+                : `Add ${item.name} to order`
+          }
           className="button-secondary mt-5 w-full justify-between"
-          disabled={unavailable}
+          disabled={unavailable || attemptFrozen}
           onClick={onAdd}
           type="button"
         >
-          <span>{unavailable ? "Unavailable" : quantity > 0 ? `${quantity} in order` : "Add to order"}</span>
+          <span>
+            {unavailable
+              ? "Unavailable"
+              : attemptFrozen
+                ? "Checkout saved"
+                : quantity > 0
+                  ? `${quantity} in order`
+                  : "Add to order"}
+          </span>
           {!unavailable ? <Icon name="plus" size={17} /> : null}
         </button>
       </div>
@@ -191,23 +222,111 @@ export function CustomerMenu({ restaurantSlug, tableToken }: CustomerMenuProps) 
   const [specialInstructions, setSpecialInstructions] = useState("");
   const [confirmation, setConfirmation] = useState<OrderConfirmation | null>(null);
   const [activeCategory, setActiveCategory] = useState("all");
+  const [pendingAttempt, setPendingAttempt] = useState<OrderAttempt | null>(null);
+  const [legacyRecovery, setLegacyRecovery] = useState<ReturnType<typeof restoreOrderAttemptState>["legacy"]>();
+  const routeKey = JSON.stringify([restaurantSlug, tableToken]);
+  const routeRef = useRef(routeKey);
+  const pendingAttemptRef = useRef<OrderAttempt | null>(null);
+  const loadedMenuRouteRef = useRef<string | null>(null);
+
+  // A client component can be reused while only the route params change. Do
+  // this synchronously as well as in the effect below so an old in-flight
+  // callback cannot read the new route's menu and submit its saved payload.
+  if (routeRef.current !== routeKey) {
+    routeRef.current = routeKey;
+    pendingAttemptRef.current = null;
+    loadedMenuRouteRef.current = null;
+  }
+
+  function updatePendingAttempt(attempt: OrderAttempt | null) {
+    pendingAttemptRef.current = attempt;
+    setPendingAttempt(attempt);
+  }
 
   const loadMenu = useCallback(async () => {
+    const requestRouteKey = routeKey;
     setStatus("loading");
     setLoadError(null);
+    setMenu(null);
+    loadedMenuRouteRef.current = null;
     try {
       const result = await getRestaurantMenu(restaurantSlug, tableToken);
+      if (routeRef.current !== requestRouteKey) {
+        return;
+      }
+
+      loadedMenuRouteRef.current = requestRouteKey;
       setMenu(result);
       setStatus("ready");
     } catch (error) {
+      if (routeRef.current !== requestRouteKey) {
+        return;
+      }
+
       setStatus("error");
       setLoadError(error instanceof Error ? error.message : "The menu could not be loaded.");
     }
-  }, [restaurantSlug, tableToken]);
+  }, [restaurantSlug, routeKey, tableToken]);
+
+  useEffect(() => {
+    pendingAttemptRef.current = null;
+    loadedMenuRouteRef.current = null;
+    setPendingAttempt(null);
+    setLegacyRecovery(undefined);
+    setCart({});
+    setCartOpen(false);
+    setConfirmation(null);
+    setSpecialInstructions("");
+    setSubmitError(null);
+    setSubmitting(false);
+    setActiveCategory("all");
+  }, [routeKey]);
 
   useEffect(() => {
     void loadMenu();
   }, [loadMenu]);
+
+  useEffect(() => {
+    if (!menu || loadedMenuRouteRef.current !== routeKey) {
+      return;
+    }
+
+    const recovery = restoreOrderAttemptState(
+      restaurantSlug,
+      tableToken,
+      menu.table.id,
+    );
+
+    if (recovery.legacy) {
+      setLegacyRecovery(recovery.legacy);
+      setSubmitError(recovery.legacy.message);
+      return;
+    }
+
+    if (recovery.mismatch) {
+      setSubmitError(
+        "We found a saved checkout for another table. Return to the original table link to retry it, or start a new order here.",
+      );
+      return;
+    }
+
+    if (!recovery.attempt) {
+      return;
+    }
+
+    updatePendingAttempt(recovery.attempt);
+    setCart(
+      Object.fromEntries(
+        recovery.attempt.input.items.map((item) => [item.menu_item_id, item.quantity]),
+      ),
+    );
+    setSpecialInstructions(recovery.attempt.input.special_instructions || "");
+    setSubmitError(
+      recovery.attempt.status === "conflict"
+        ? "This saved checkout cannot be retried with different details using its original idempotency key. Start over and edit order to begin a new checkout."
+        : "We found an unfinished checkout. Retry the saved order or start over to edit it.",
+    );
+  }, [menu, restaurantSlug, routeKey, tableToken]);
 
   const categories = useMemo(() => (menu ? buildCategories(menu) : []), [menu]);
 
@@ -240,9 +359,14 @@ export function CustomerMenu({ restaurantSlug, tableToken }: CustomerMenuProps) 
 
   const itemCount = cartItems.reduce((sum, item) => sum + item.quantity, 0);
   const subtotal = cartItems.reduce((sum, item) => sum + item.price * item.quantity, 0);
+  const routeReady = loadedMenuRouteRef.current === routeKey;
+  const activePendingAttempt = routeReady ? pendingAttempt : null;
+  const attemptFrozen = activePendingAttempt !== null;
+  const attemptConflict = activePendingAttempt?.status === "conflict";
+  const recoveryBlocked = routeReady && legacyRecovery !== undefined;
 
   function addItem(item: MenuItem) {
-    if (item.isAvailable === false) {
+    if (item.isAvailable === false || pendingAttemptRef.current) {
       return;
     }
     setCart((current) => ({ ...current, [item.id]: (current[item.id] || 0) + 1 }));
@@ -250,6 +374,10 @@ export function CustomerMenu({ restaurantSlug, tableToken }: CustomerMenuProps) 
   }
 
   function setQuantity(id: string, quantity: number) {
+    if (pendingAttemptRef.current) {
+      return;
+    }
+
     setCart((current) => {
       const next = { ...current };
       if (quantity <= 0) {
@@ -262,32 +390,128 @@ export function CustomerMenu({ restaurantSlug, tableToken }: CustomerMenuProps) 
     setSubmitError(null);
   }
 
-  async function placeOrder() {
-    if (!menu || cartItems.length === 0) {
+  function setInstructions(value: string) {
+    if (pendingAttemptRef.current) {
       return;
+    }
+
+    setSpecialInstructions(value);
+    setSubmitError(null);
+  }
+
+  function abandonOrderAttempt() {
+    if (submitting) {
+      return;
+    }
+
+    if (legacyRecovery) {
+      abandonPersistedOrderAttempt(legacyRecovery);
+      setLegacyRecovery(undefined);
+    } else {
+      clearOrderAttempt(pendingAttemptRef.current || restaurantSlug);
+    }
+    updatePendingAttempt(null);
+    setSubmitError(null);
+  }
+
+  async function placeOrder() {
+    if (
+      !menu ||
+      !routeReady ||
+      recoveryBlocked ||
+      (cartItems.length === 0 && !pendingAttemptRef.current) ||
+      submitting
+    ) {
+      return;
+    }
+
+    const submissionRouteKey = routeKey;
+    const existingAttempt = pendingAttemptRef.current;
+    if (
+      existingAttempt &&
+      !isOrderAttemptForRoute(
+        existingAttempt,
+        restaurantSlug,
+        tableToken,
+        menu.table.id,
+      )
+    ) {
+      return;
+    }
+
+    if (existingAttempt?.status === "conflict") {
+      return;
+    }
+
+    const input: SubmitOrderInput = existingAttempt?.input || {
+      restaurant_slug: restaurantSlug,
+      table_token: tableToken,
+      items: cartItems.map((item) => ({ menu_item_id: item.id, quantity: item.quantity })),
+      special_instructions: specialInstructions.trim(),
+    };
+    const attempt = existingAttempt || createOrderAttempt(input, menu.table.id);
+
+    if (!existingAttempt) {
+      updatePendingAttempt(attempt);
+      saveOrderAttempt(attempt);
     }
 
     setSubmitting(true);
     setSubmitError(null);
     try {
-      const result = await submitOrder({
-        restaurant_slug: restaurantSlug,
-        table_token: tableToken,
-        items: cartItems.map((item) => ({ menu_item_id: item.id, quantity: item.quantity })),
-        special_instructions: specialInstructions.trim(),
-      });
-      setCart({});
-      setSpecialInstructions("");
-      setCartOpen(false);
-      setConfirmation(result);
+      const result = await submitOrder(attempt.input, attempt.idempotencyKey);
+      clearOrderAttempt(attempt);
+      if (routeRef.current === submissionRouteKey) {
+        updatePendingAttempt(null);
+        setCart({});
+        setSpecialInstructions("");
+        setCartOpen(false);
+        setConfirmation(result);
+      }
     } catch (error) {
-      setSubmitError(error instanceof Error ? error.message : "Your order could not be sent.");
+      const conflict = isOrderIdempotencyConflict(error);
+      const uncertain = isUncertainOrderError(error);
+      const definiteClientError = isDefiniteOrderClientError(error);
+      const message = conflict
+        ? "This saved checkout is already associated with another request. Start over to create a new order."
+        : definiteClientError
+          ? error instanceof Error
+            ? error.message
+            : "Your order could not be sent. Please check the order and try again."
+        : uncertain
+          ? "We could not confirm your order. Your saved checkout is ready to retry, or you can start over."
+          : error instanceof Error
+            ? error.message
+            : "Your order could not be sent.";
+
+      if (conflict || !definiteClientError) {
+        const failedAttempt = conflict
+          ? markOrderAttemptConflict(attempt)
+          : markOrderAttemptUncertain(attempt);
+        saveOrderAttempt(failedAttempt);
+
+        if (routeRef.current === submissionRouteKey) {
+          updatePendingAttempt(failedAttempt);
+          setSubmitError(message);
+        }
+      } else {
+        // A definite non-conflict 4xx means the request was rejected before
+        // an uncertain order could have been created. Drop only the original
+        // attempt's storage entry and leave the current cart editable.
+        clearOrderAttempt(attempt);
+        if (routeRef.current === submissionRouteKey) {
+          updatePendingAttempt(null);
+          setSubmitError(message);
+        }
+      }
     } finally {
-      setSubmitting(false);
+      if (routeRef.current === submissionRouteKey) {
+        setSubmitting(false);
+      }
     }
   }
 
-  if (status === "loading") {
+  if (status === "loading" || !routeReady) {
     return (
       <>
         <div className="customer-ambient" />
@@ -381,6 +605,7 @@ export function CustomerMenu({ restaurantSlug, tableToken }: CustomerMenuProps) 
                         item={item}
                         key={item.id}
                         onAdd={() => addItem(item)}
+                        attemptFrozen={attemptFrozen}
                         quantity={cart[item.id] || 0}
                       />
                     ))}
@@ -397,8 +622,12 @@ export function CustomerMenu({ restaurantSlug, tableToken }: CustomerMenuProps) 
               itemCount={itemCount}
               items={cartItems}
               onQuantityChange={setQuantity}
+              onAbandonAttempt={abandonOrderAttempt}
               onSubmit={() => void placeOrder()}
-              onSpecialInstructionsChange={setSpecialInstructions}
+              onSpecialInstructionsChange={setInstructions}
+              attemptConflict={attemptConflict}
+              attemptFrozen={attemptFrozen}
+              recoveryBlocked={recoveryBlocked}
               submitting={submitting}
               specialInstructions={specialInstructions}
               submitError={submitError}
@@ -438,8 +667,12 @@ export function CustomerMenu({ restaurantSlug, tableToken }: CustomerMenuProps) 
               itemCount={itemCount}
               items={cartItems}
               onQuantityChange={setQuantity}
+              onAbandonAttempt={abandonOrderAttempt}
               onSubmit={() => void placeOrder()}
-              onSpecialInstructionsChange={setSpecialInstructions}
+              onSpecialInstructionsChange={setInstructions}
+              attemptConflict={attemptConflict}
+              attemptFrozen={attemptFrozen}
+              recoveryBlocked={recoveryBlocked}
               submitting={submitting}
               specialInstructions={specialInstructions}
               submitError={submitError}

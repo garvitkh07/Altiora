@@ -164,6 +164,16 @@ Returns a `RestaurantMenu` object, optionally wrapped in `{ "data": ... }`:
 
 ### `POST /api/orders`
 
+The browser submits an opaque `Idempotency-Key` header with the request. The
+same key must be reused with the same body when a network timeout or server
+failure leaves the outcome uncertain. A new checkout generates a new key.
+
+The route returns `201` for a newly created order, `200` for a matching replay,
+`409` when a key is reused for a different normalized request, and `400` for a
+missing/malformed key or definite validation failure. HTTP `408` and `429`,
+network failures, and `5xx` responses remain retryable with the original key;
+the customer UI does not silently generate a replacement key for them.
+
 The browser submits:
 
 ```json
@@ -183,8 +193,9 @@ The browser submits:
 
 The route returns `order_id`, `order_number`, `status`, `total_amount`, and
 the database-generated `created_at` timestamp, alongside a compatibility
-`order` object. The existing browser helper accepts the documented snake_case
-payload; the API also safely accepts the prior camelCase QR-link payload.
+`order` object and a `replayed` marker. The existing browser helper accepts the
+documented snake_case payload; the API also safely accepts the prior camelCase
+QR-link payload.
 
 ### `GET /api/kitchen/dashboard`
 
