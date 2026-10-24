@@ -171,9 +171,9 @@ select ok(
   'authenticated cannot update protected order fields'
 );
 
-select ok(exists (select 1 from pg_policies where schemaname = 'public' and tablename = 'restaurants' and policyname = 'restaurants_public_read'), 'active restaurant public policy exists');
-select ok(exists (select 1 from pg_policies where schemaname = 'public' and tablename = 'categories' and policyname = 'categories_public_read'), 'active category public policy exists');
-select ok(exists (select 1 from pg_policies where schemaname = 'public' and tablename = 'menu_items' and policyname = 'menu_items_public_read'), 'active menu-item public policy exists');
+select ok(not exists (select 1 from pg_policies where schemaname = 'public' and tablename = 'restaurants' and policyname = 'restaurants_public_read'), 'anonymous restaurant direct-read policy is removed');
+select ok(not exists (select 1 from pg_policies where schemaname = 'public' and tablename = 'categories' and policyname = 'categories_public_read'), 'anonymous category direct-read policy is removed');
+select ok(not exists (select 1 from pg_policies where schemaname = 'public' and tablename = 'menu_items' and policyname = 'menu_items_public_read'), 'anonymous menu-item direct-read policy is removed');
 select ok(exists (select 1 from pg_policies where schemaname = 'public' and tablename = 'orders' and policyname = 'orders_member_select' and qual like '%is_restaurant_member%'), 'orders SELECT policy is tenant-bound');
 select ok(exists (select 1 from pg_policies where schemaname = 'public' and tablename = 'orders' and policyname = 'orders_member_status_update' and qual like '%is_restaurant_member%'), 'orders status UPDATE policy is tenant-bound');
 select ok(exists (select 1 from pg_policies where schemaname = 'public' and tablename = 'order_items' and policyname = 'order_items_member_select' and qual like '%is_restaurant_member%'), 'order_items SELECT policy is tenant-bound');
